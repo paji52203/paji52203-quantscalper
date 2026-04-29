@@ -59,6 +59,20 @@ def update_status(data: dict):
         _status["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+_last_tick_update = 0.0
+
+def update_price(price: float):
+    """Called on every price tick — throttled to max once per second."""
+    global _last_tick_update
+    now = time.time()
+    if now - _last_tick_update < 1.0:
+        return
+    _last_tick_update = now
+    with _lock:
+        _status["price"] = round(price, 2)
+        _status["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
 def get_status() -> dict:
     with _lock:
         return dict(_status)
@@ -465,7 +479,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   }
 
   refresh();
-  setInterval(refresh, 5000);
+  setInterval(refresh, 3000);
 </script>
 </body>
 </html>

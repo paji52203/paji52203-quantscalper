@@ -23,7 +23,7 @@ from core.phase_detector import PhaseDetector, Phase, Direction
 from core.signal_engine import SignalEngine
 from core.position_manager import PositionManager, OpenPosition
 from utils.telegram import TelegramNotifier
-from utils.status_server import start_server, update_status
+from utils.status_server import start_server, update_status, update_price
 
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -100,10 +100,13 @@ def _log_signal(signal, phase_result=None):
 def on_price_tick(price: float):
     """
     Called on every WebSocket ticker update.
-    Checks real-time breakout entry (Y option: enter during candle, not at close).
+    Checks real-time breakout entry (enter during candle, not at close).
     Also manages open position trail/close.
     """
     global open_pos, latest_snap
+
+    # Always update dashboard price in real-time
+    update_price(price)
 
     if latest_snap is None:
         return

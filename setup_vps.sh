@@ -5,7 +5,7 @@
 
 set -e
 
-REPO="https://github.com/paji52203/quantscalper.git"
+REPO="https://github.com/paji52203/paji52203-quantscalper.git"
 VPS_DIR="/root/quantscalper"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

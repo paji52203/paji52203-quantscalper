@@ -355,11 +355,42 @@ def main():
     # Initial indicator snapshot
     latest_snap = indicator_eng.compute(ohlcv_cache)
     if latest_snap:
+        snap = latest_snap
+        phase_result = phase_detector.detect(snap)
         logger.info(
             "Initial state | Squeeze=%s/%dc | Mom=%.2f | RSI=%.1f",
-            latest_snap.squeeze_on, latest_snap.squeeze_candles,
-            latest_snap.momentum, latest_snap.rsi
+            snap.squeeze_on, snap.squeeze_candles,
+            snap.momentum, snap.rsi
         )
+        # Update dashboard with real data immediately
+        signal_init = signal_eng.evaluate(phase_result, snap, snap.close)
+        update_status({
+            "symbol": SYMBOL,
+            "price": snap.close,
+            "phase": phase_result.phase.value,
+            "direction": phase_result.direction.value,
+            "dry_run": DRY_RUN,
+            "conditions": {
+                "squeeze_active": snap.squeeze_on,
+                "squeeze_candles": snap.squeeze_candles,
+                "volume_ok": snap.vol_ratio >= float(signal_cfg.get("VOL_RATIO_MIN", 1.3)),
+                "vol_ratio": round(snap.vol_ratio, 2),
+                "momentum_clear": abs(snap.momentum) > 0.5,
+                "momentum": round(snap.momentum, 2),
+                "no_exhaustion": len(phase_result.exhaustion_flags) == 0,
+                "exhaustion_flags": phase_result.exhaustion_flags,
+                "rsi_ok": not (snap.rsi_bullish_divergence or snap.rsi_bearish_divergence),
+                "rsi": round(snap.rsi, 1),
+                "fee_gate_ok": signal_init.action in ("BUY", "SELL"),
+            },
+            "signal": signal_init.action,
+            "signal_entry": signal_init.entry,
+            "signal_sl": signal_init.sl,
+            "signal_tp": signal_init.tp,
+            "signal_rr": signal_init.rr,
+            "confidence": signal_init.confidence,
+            "reason": signal_init.reason,
+        })
 
     # Register WebSocket callbacks
     connector.on_price_tick(on_price_tick)

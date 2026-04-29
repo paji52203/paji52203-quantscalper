@@ -23,6 +23,7 @@ from core.phase_detector import PhaseDetector, Phase, Direction
 from core.signal_engine import SignalEngine
 from core.position_manager import PositionManager, OpenPosition
 from utils.telegram import TelegramNotifier
+from utils.status_server import start_server, update_status
 
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -50,6 +51,7 @@ DRY_RUN   = cfg["DRY_RUN"].getboolean("ENABLED", True)
 TG_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN",  cfg["TELEGRAM"].get("BOT_TOKEN", ""))
 TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID",    cfg["TELEGRAM"].get("CHAT_ID", ""))
 TG_NOTIFY  = cfg["TELEGRAM"].getboolean("ENABLED", True)
+DASH_PORT  = int(cfg["TELEGRAM"].get("DASHBOARD_PORT", 8080))
 
 API_KEY    = os.environ.get("BYBIT_API_KEY", "")
 API_SECRET = os.environ.get("BYBIT_API_SECRET", "")
@@ -174,6 +176,36 @@ def on_candle_close(candle: dict):
         snap.vol_ratio, snap.rsi
     )
 
+    # ── Update dashboard status ──
+    signal_now = signal_eng.evaluate(phase_result, snap, snap.close)
+    update_status({
+        "symbol": SYMBOL,
+        "price": snap.close,
+        "phase": phase_result.phase.value,
+        "direction": phase_result.direction.value,
+        "dry_run": DRY_RUN,
+        "conditions": {
+            "squeeze_active": snap.squeeze_on,
+            "squeeze_candles": snap.squeeze_candles,
+            "volume_ok": snap.vol_ratio >= float(signal_cfg.get("VOL_RATIO_MIN", 1.3)),
+            "vol_ratio": round(snap.vol_ratio, 2),
+            "momentum_clear": abs(snap.momentum) > 0.5,
+            "momentum": round(snap.momentum, 2),
+            "no_exhaustion": len(phase_result.exhaustion_flags) == 0,
+            "exhaustion_flags": phase_result.exhaustion_flags,
+            "rsi_ok": not (snap.rsi_bullish_divergence or snap.rsi_bearish_divergence),
+            "rsi": round(snap.rsi, 1),
+            "fee_gate_ok": signal_now.action in ("BUY", "SELL"),
+        },
+        "signal": signal_now.action,
+        "signal_entry": signal_now.entry,
+        "signal_sl": signal_now.sl,
+        "signal_tp": signal_now.tp,
+        "signal_rr": signal_now.rr,
+        "confidence": signal_now.confidence,
+        "reason": signal_now.reason,
+    })
+
     # Check CLOSE if position open
     if open_pos:
         signal = signal_eng.evaluate(
@@ -293,6 +325,17 @@ def main():
     global ohlcv_cache, latest_snap
 
     logger.info("QuantScalper starting | %s %sm | DRY_RUN=%s", SYMBOL, TIMEFRAME, DRY_RUN)
+
+    # Start status dashboard
+    start_server(DASH_PORT)
+    logger.info("Dashboard live at http://0.0.0.0:%d", DASH_PORT)
+    update_status({
+        "symbol": SYMBOL,
+        "dry_run": DRY_RUN,
+        "phase": "STARTING",
+        "signal": "HOLD",
+        "reason": "Bot starting...",
+    })
 
     # Telegram startup notification
     if telegram:

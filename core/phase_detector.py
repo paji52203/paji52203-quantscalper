@@ -246,6 +246,13 @@ class PhaseDetector:
             flags.append(f"RSI bullish div (RSI={snap.rsi:.1f})")
         if snap.squeeze_candles >= self.squeeze_stale:
             flags.append(f"stale squeeze ({snap.squeeze_candles}c)")
+        
+        # Wick rejection blocks
+        if snap.momentum < 0 and snap.is_bullish_pinbar:
+            flags.append(f"Bullish Pin Bar rejection blocking SHORT")
+        if snap.momentum > 0 and snap.is_bearish_pinbar:
+            flags.append(f"Bearish Pin Bar rejection blocking LONG")
+            
         return flags
 
     def _get_direction(self, snap: IndicatorSnapshot) -> Direction:

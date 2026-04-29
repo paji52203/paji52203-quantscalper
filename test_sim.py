@@ -27,7 +27,7 @@ def make_candle(base, vol_mult=1.0, bullish=True, squeeze=False):
     if squeeze:
         rng = base * 0.0008  # tight range during squeeze
     else:
-        rng = base * 0.003   # normal range
+        rng = base * 0.008   # normal range
 
     if bullish:
         o = base - rng * 0.3
@@ -44,8 +44,8 @@ def make_candle(base, vol_mult=1.0, bullish=True, squeeze=False):
 ohlcv = []
 price = 94000.0
 
-# Phase 1: 200 normal candles (baseline for indicators)
-for i in range(200):
+# Phase 1: 250 normal candles (baseline for indicators including EMA200)
+for i in range(250):
     bullish = random.random() > 0.48
     ohlcv.append(make_candle(price, vol_mult=1.0, bullish=bullish))
     price += random.uniform(-50, 60) if bullish else random.uniform(-60, 50)
@@ -96,22 +96,24 @@ current_price = float(ohlcv[-1][4])  # close of last candle
 signal = sig_eng.evaluate(phase_result, snap, current_price)
 
 print("\n" + "="*55)
-print("TEST 1: COMPRESSION → EXPANSION SIGNAL")
+print("TEST 1: COMPRESSION → EXPANSION SIGNAL (V2)")
 print("="*55)
 print(f"  Current price:  ${current_price:,.2f}")
-print(f"  BB:             ${snap.bb_lower:,.2f} — ${snap.bb_upper:,.2f}")
-print(f"  KC:             ${snap.kc_lower:,.2f} — ${snap.kc_upper:,.2f}")
 print(f"  Squeeze ON:     {snap.squeeze_on} ({snap.squeeze_candles}c)")
 print(f"  Momentum:       {snap.momentum:.4f}")
 print(f"  Vol ratio:      {snap.vol_ratio:.2f}x")
 print(f"  RSI:            {snap.rsi:.1f}")
+print(f"  SuperTrend:     {'BULL (UP)' if snap.supertrend_bull else 'BEAR (DOWN)'} at ${snap.supertrend:,.2f}")
+print(f"  EMA Trend:      {'BULL' if snap.ema_bull else 'BEAR'} (EMA50: ${snap.ema50:,.2f}, EMA200: ${snap.ema200:,.2f})")
+print(f"  ADX:            {snap.adx:.1f}")
+print(f"  Score:          {phase_result.confluence_score} / 10")
 print()
 print(f"  Phase:          {phase_result.phase.value}")
 print(f"  Direction:      {phase_result.direction.value}")
 print(f"  Signal:         {signal.action}")
 if signal.action != "HOLD":
     print(f"  Entry:          ${signal.entry:,.2f}")
-    print(f"  SL:             ${signal.sl:,.2f}")
+    print(f"  SL:             ${signal.sl:,.2f} (from Squeeze Zone)")
     print(f"  TP:             ${signal.tp:,.2f}")
     print(f"  R/R:            1:{signal.rr}")
     print(f"  Confidence:     {signal.confidence}%")

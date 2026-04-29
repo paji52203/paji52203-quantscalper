@@ -63,6 +63,8 @@ class IndicatorSnapshot:
     rsi_bullish_divergence: bool
     is_blowoff: bool
     is_climactic_volume: bool
+    is_bullish_pinbar: bool     # long lower wick rejecting support
+    is_bearish_pinbar: bool     # long upper wick rejecting resistance
 
     # ── NEW v2 ──────────────────────────────────────────────
 
@@ -190,10 +192,19 @@ class IndicatorEngine:
         rsi_bearish_div = bool(closes[-1] > price_prev_high and rsi_series[-1] < rsi_prev_high)
         rsi_bullish_div = bool(closes[-1] < price_prev_low  and rsi_series[-1] > rsi_prev_low)
 
-        # ── Candle range / Blow-off ──
+        # ── Candle range / Blow-off / Pin Bar ──
         candle_range  = float(highs[-1] - lows[-1])
         is_blowoff    = candle_range > self.atr_blow_mult * atr[-1]
         is_climactic  = vol_ratio > self.vol_climax_mult
+
+        body = abs(closes[-1] - opens[-1])
+        upper_wick = highs[-1] - max(opens[-1], closes[-1])
+        lower_wick = min(opens[-1], closes[-1]) - lows[-1]
+        
+        # Bullish pinbar: long lower wick (>= 2x body), small upper wick
+        is_bull_pinbar = (lower_wick >= 2 * body) and (upper_wick < body) and (candle_range > 0)
+        # Bearish pinbar: long upper wick (>= 2x body), small lower wick
+        is_bear_pinbar = (upper_wick >= 2 * body) and (lower_wick < body) and (candle_range > 0)
 
         # ── SuperTrend ──
         st_val, st_bull = self._supertrend(highs, lows, closes, atr)
@@ -225,6 +236,8 @@ class IndicatorEngine:
             macd_bull=macd_bull,
             macd_hist=float(macd_hist_[-1]),
             ema_bull=ema_bull,
+            is_bull_pinbar=is_bull_pinbar,
+            is_bear_pinbar=is_bear_pinbar,
         )
 
         return IndicatorSnapshot(
@@ -256,6 +269,8 @@ class IndicatorEngine:
             rsi_bullish_divergence=rsi_bullish_div,
             is_blowoff=is_blowoff,
             is_climactic_volume=is_climactic,
+            is_bullish_pinbar=bool(is_bull_pinbar),
+            is_bearish_pinbar=bool(is_bear_pinbar),
             # v2
             supertrend=float(st_val),
             supertrend_bull=st_bull,
@@ -273,7 +288,8 @@ class IndicatorEngine:
     # ── Confluence Scoring ────────────────────────────────────────────────────
 
     def _confluence(self, squeeze_on, squeeze_candles, momentum, momentum_prev,
-                    rsi, vol_ratio, st_bull, adx, macd_bull, macd_hist, ema_bull) -> int:
+                    rsi, vol_ratio, st_bull, adx, macd_bull, macd_hist, ema_bull,
+                    is_bull_pinbar=False, is_bear_pinbar=False) -> int:
         """
         Compute directional confluence score.
         Positive = bullish, Negative = bearish.
@@ -326,6 +342,12 @@ class IndicatorEngine:
         if squeeze_on and squeeze_candles >= 3:
             score += 1 if (momentum > 0) else -1
 
+        # Pin Bar Rejection bonus (±2)
+        if is_bull_pinbar and momentum > 0:
+            score += 2
+        if is_bear_pinbar and momentum < 0:
+            score -= 2
+
         return max(-10, min(10, score))
 
     # ── SuperTrend ────────────────────────────────────────────────────────────
@@ -340,8 +362,9 @@ class IndicatorEngine:
 
         for i in range(1, n):
             hl2 = (highs[i] + lows[i]) / 2.0
-            upper[i] = hl2 + self.st_mult * atr[i]
-            lower[i] = hl2 - self.st_mult * atr[i]
+            atr_val = atr[i] if not np.isnan(atr[i]) else 0.0
+            upper[i] = hl2 + self.st_mult * atr_val
+            lower[i] = hl2 - self.st_mult * atr_val
 
             # Adjust bands to only tighten
             if i > 1:

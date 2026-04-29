@@ -119,61 +119,79 @@ class PhaseDetector:
                 ema_bull=snap.ema_bull,
             )
 
-        # ── EXPANSION: squeeze fired ──
-        if (squeeze_fired
-                and effective_squeeze_candles >= self.squeeze_min
-                and snap.vol_ratio >= self.vol_ratio_min):
+        # ── Extreme Trend Breakout (No Squeeze Required) ──
+        # If the market suddenly dumps/pumps strongly without prior compression.
+        is_extreme_trend_long  = (snap.confluence_score >= 8) and (snap.adx > 25) and (snap.vol_ratio >= self.vol_ratio_min)
+        is_extreme_trend_short = (snap.confluence_score <= -8) and (snap.adx > 25) and (snap.vol_ratio >= self.vol_ratio_min)
+        is_extreme_trend       = is_extreme_trend_long or is_extreme_trend_short
+
+        # ── EXPANSION: squeeze fired OR extreme trend ──
+        if ((squeeze_fired and effective_squeeze_candles >= self.squeeze_min and snap.vol_ratio >= self.vol_ratio_min) 
+            or is_extreme_trend):
 
             direction = self._get_direction(snap)
+
+            # Prevent mismatch
+            if is_extreme_trend_long and direction != Direction.LONG:
+                direction = Direction.LONG
+            if is_extreme_trend_short and direction != Direction.SHORT:
+                direction = Direction.SHORT
 
             # ── Gate 1: SuperTrend must align ──
             if direction == Direction.LONG and not snap.supertrend_bull:
                 return self._hold(snap, effective_squeeze_candles,
-                    f"Squeeze fired LONG but SuperTrend is BEARISH — skip.",
+                    f"Setup LONG but SuperTrend is BEARISH — skip.",
                     squeeze_zone_high, squeeze_zone_low)
 
             if direction == Direction.SHORT and snap.supertrend_bull:
                 return self._hold(snap, effective_squeeze_candles,
-                    f"Squeeze fired SHORT but SuperTrend is BULLISH — skip.",
+                    f"Setup SHORT but SuperTrend is BULLISH — skip.",
                     squeeze_zone_high, squeeze_zone_low)
 
             # ── Gate 2: EMA trend stack ──
             if direction == Direction.LONG and not snap.ema_bull:
                 return self._hold(snap, effective_squeeze_candles,
-                    f"Squeeze fired LONG but EMA50 < EMA200 (bearish trend) — skip.",
+                    f"Setup LONG but EMA50 < EMA200 (bearish trend) — skip.",
                     squeeze_zone_high, squeeze_zone_low)
 
             if direction == Direction.SHORT and snap.ema_bull:
                 return self._hold(snap, effective_squeeze_candles,
-                    f"Squeeze fired SHORT but EMA50 > EMA200 (bullish trend) — skip.",
+                    f"Setup SHORT but EMA50 > EMA200 (bullish trend) — skip.",
                     squeeze_zone_high, squeeze_zone_low)
 
             # ── Gate 3: Confluence score ──
             if direction == Direction.LONG and snap.confluence_score < self.CONFLUENCE_THRESHOLD:
                 return self._hold(snap, effective_squeeze_candles,
-                    f"Squeeze fired LONG but confluence score {snap.confluence_score} < {self.CONFLUENCE_THRESHOLD}.",
+                    f"Setup LONG but confluence score {snap.confluence_score} < {self.CONFLUENCE_THRESHOLD}.",
                     squeeze_zone_high, squeeze_zone_low)
 
             if direction == Direction.SHORT and snap.confluence_score > -self.CONFLUENCE_THRESHOLD:
                 return self._hold(snap, effective_squeeze_candles,
-                    f"Squeeze fired SHORT but confluence score {snap.confluence_score} > -{self.CONFLUENCE_THRESHOLD}.",
+                    f"Setup SHORT but confluence score {snap.confluence_score} > -{self.CONFLUENCE_THRESHOLD}.",
                     squeeze_zone_high, squeeze_zone_low)
 
             # ── All gates passed → EXPANSION ──
             # Clear zone after use
             self._squeeze_zone_highs = []
             self._squeeze_zone_lows  = []
+            
+            if is_extreme_trend:
+                reason_str = (f"EXTREME TREND (No Squeeze). ADX={snap.adx:.1f} "
+                              f"ST={'BULL' if snap.supertrend_bull else 'BEAR'} "
+                              f"EMA={'BULL' if snap.ema_bull else 'BEAR'} "
+                              f"Score={snap.confluence_score} "
+                              f"Mom={snap.momentum:.1f} Vol={snap.vol_ratio:.2f}x")
+            else:
+                reason_str = (f"SQUEEZE BREAKOUT ({effective_squeeze_candles}c). "
+                              f"ST={'BULL' if snap.supertrend_bull else 'BEAR'} "
+                              f"EMA={'BULL' if snap.ema_bull else 'BEAR'} "
+                              f"Score={snap.confluence_score} "
+                              f"Mom={snap.momentum:.1f} Vol={snap.vol_ratio:.2f}x")
 
             return PhaseResult(
                 phase=Phase.EXPANSION,
                 direction=direction,
-                reason=(
-                    f"EXPANSION after {effective_squeeze_candles}c squeeze. "
-                    f"ST={'BULL' if snap.supertrend_bull else 'BEAR'} "
-                    f"EMA={'BULL' if snap.ema_bull else 'BEAR'} "
-                    f"Score={snap.confluence_score} "
-                    f"Mom={snap.momentum:.1f} Vol={snap.vol_ratio:.2f}x"
-                ),
+                reason=reason_str,
                 squeeze_candles=effective_squeeze_candles,
                 momentum=snap.momentum,
                 vol_ratio=snap.vol_ratio,

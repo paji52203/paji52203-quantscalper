@@ -201,15 +201,39 @@ class BybitConnector:
         return None
 
     def get_balance(self) -> float:
-        """Get available USDT balance."""
+        """Get available USDT balance (supports Unified Trading Account)."""
         result = self._signed_get("/v5/account/wallet-balance",
                                   {"accountType": "UNIFIED"})
         if result and result.get("retCode") == 0:
             for acc in result["result"]["list"]:
                 for coin in acc.get("coin", []):
                     if coin["coin"] == "USDT":
-                        return float(coin.get("availableToWithdraw", 0))
+                        # Unified account: availableToWithdraw may be empty → use walletBalance
+                        raw = coin.get("availableToWithdraw") or coin.get("walletBalance", "0")
+                        try:
+                            return float(raw)
+                        except (ValueError, TypeError):
+                            return 0.0
         return 0.0
+
+    def get_balance_detail(self) -> dict:
+        """Get full USDT balance detail (equity, wallet, unrealised PnL)."""
+        result = self._signed_get("/v5/account/wallet-balance",
+                                  {"accountType": "UNIFIED"})
+        if result and result.get("retCode") == 0:
+            for acc in result["result"]["list"]:
+                for coin in acc.get("coin", []):
+                    if coin["coin"] == "USDT":
+                        def _f(k): 
+                            try: return float(coin.get(k) or 0)
+                            except: return 0.0
+                        return {
+                            "equity":        _f("equity"),
+                            "wallet":        _f("walletBalance"),
+                            "unrealised_pnl":_f("unrealisedPnl"),
+                            "cum_realised":  _f("cumRealisedPnl"),
+                        }
+        return {}
 
     def set_leverage(self, leverage: int):
         """Set leverage for the symbol."""

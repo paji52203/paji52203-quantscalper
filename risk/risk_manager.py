@@ -31,6 +31,12 @@ class RiskManager:
         self.round_trip_cost = 2 * self.fee_pct  # 0.11% — open + close
         self.flip_cost = 2 * self.fee_pct         # 0.11% — close old + open new
 
+    def _log(self, msg: str):
+        if self.logger:
+            self.logger.info(msg)
+        else:
+            print(f"[RiskManager] {msg}")
+
     def calculate_qty(self,
                       balance: float,
                       entry: float,
@@ -68,10 +74,21 @@ class RiskManager:
         qty = notional / entry
         qty = round(qty, 4)
 
-        # Enforce minimum
+        # If below min qty but balance covers it via leverage → use min qty
         if qty < self.MIN_QTY:
-            self._log(f"Qty {qty:.6f} below minimum {self.MIN_QTY}. Skipping.")
-            return 0.0
+            min_margin_needed = (self.MIN_QTY * entry) / self.leverage
+            if balance >= min_margin_needed:
+                self._log(
+                    f"Qty {qty:.6f} below min → using MIN_QTY={self.MIN_QTY} "
+                    f"(margin needed: ${min_margin_needed:.2f}, balance: ${balance:.2f})"
+                )
+                qty = self.MIN_QTY
+            else:
+                self._log(
+                    f"Qty {qty:.6f} < min {self.MIN_QTY} AND balance ${balance:.2f} "
+                    f"< margin needed ${min_margin_needed:.2f}. Skipping."
+                )
+                return 0.0
 
         self._log(
             f"Sizing: Balance={balance:.2f} USDT | Risk={self.risk_pct*100:.1f}% "
